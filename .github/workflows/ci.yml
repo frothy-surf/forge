@@ -74,6 +74,15 @@ jobs:
           cache-to: type=registry,ref=${{ env.FORGE }}:cache-${{ matrix.arch }},mode=max
           provenance: mode=max
           sbom: true
+          # OCI labels a puller can read with `docker inspect`: where the
+          # source is, and under what terms it may be run
+          labels: |
+            org.opencontainers.image.title=frothy forge
+            org.opencontainers.image.description=WRF/WPS compute image for forge bundles (forge.frothy.surf)
+            org.opencontainers.image.source=https://github.com/frothy-surf/forge
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=LicenseRef-frothy-Run-Only-1.0
+            org.opencontainers.image.vendor=Frothy Surf
       - name: Verify the image
         run: scripts/verify-forge-image.sh ${{ env.FORGE }}:${{ github.sha }}-${{ matrix.arch }}
 

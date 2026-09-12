@@ -1,0 +1,95 @@
+frothy Run-Only License 1.0
+
+Copyright (c) 2026 Full Vibes Dev, a Washington sole proprietorship doing
+business as Frothy Surf ("the licensor"). All rights reserved except as
+granted below.
+
+Acceptance
+
+In order to get any license under these terms, you must agree to them as
+both strict obligations and conditions to all your licenses.
+
+Copyright license
+
+The licensor grants you a copyright license for the software to copy,
+build, install and run it, for any purpose, including commercial
+purposes. You may make the copies needed to do that, including copies of
+the compiled software and of images built from it, for yourself and for
+people within your own organization.
+
+Results
+
+Everything the software produces when you run it — forecasts, fields,
+files, images and any product you derive from them — is yours. This
+license places no restriction on how you use those results.
+
+Patent license
+
+The licensor grants you a patent license for the software that covers
+patent claims the licensor can license, or becomes able to license, that
+you would infringe by running the software as permitted by these terms.
+
+Limits
+
+These terms do not allow you to:
+
+1. distribute the software, or make it available to anyone outside your
+   organization, in source or compiled form, whether or not for a fee;
+
+2. change the software, or make new works based on it, or use any part of
+   its source code in other software — building the unchanged source for
+   a machine, including choosing build options the software itself
+   offers, is running it, not changing it;
+
+3. run the software for the benefit of anyone outside your organization,
+   including offering it, access to it, or the ability to run it, as a
+   service — using the results of your own runs however you like is
+   permitted (see Results);
+
+4. remove or obscure any copyright, license or attribution notice in the
+   software.
+
+Third-party components
+
+This license covers the software written by the licensor. The software
+builds and includes other work under its own terms, which this license
+does not change: the WRF and WPS models (public domain, produced by
+UCAR; "WRF" is a registered trademark of UCAR, which does not endorse
+this software), the Linux distribution packages listed in each image's
+software bill of materials, and the meteorological data the software
+downloads when it runs, each under its provider's terms.
+
+No other rights
+
+These terms do not allow you to sublicense or transfer any of your
+licenses to anyone else, or prevent the licensor from granting licenses
+to anyone else. These terms do not imply any other licenses.
+
+Termination
+
+If you use the software in violation of these terms, such use is not
+licensed, and your licenses end automatically. If the licensor notifies
+you of a violation and you stop the violation within 30 days of the
+notice, your licenses are reinstated retroactively. Any use after a
+second such notice ends your licenses permanently.
+
+Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, NON-INFRINGEMENT, AND ACCURACY OF ANY FORECAST OR
+RESULT. THE LICENSOR IS NOT LIABLE FOR ANY DAMAGES ARISING FROM THE
+SOFTWARE OR ITS RESULTS, UNDER ANY LEGAL THEORY, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES. Weather is dangerous; never rely on the
+software's output as the sole basis for a safety decision.
+
+Definitions
+
+The "licensor" is the entity named above. The "software" is the code and
+files the licensor makes available under these terms in this repository
+and any compiled form of it, including the images the licensor publishes
+as registry.frothy.surf/frothy-forge and ghcr.io/frothy-surf/forge.
+"You" refers to the individual or entity agreeing to these terms; "your
+organization" is you and any company or other organization you work for,
+together with its affiliates. "Run" means executing the software to
+produce results.

@@ -85,6 +85,9 @@ ERA5, the Copernicus Climate Data Store under its own licence.
 
 ## License
 
-No open-source license has been applied to the frothy code in this
-repository yet; it is published so the image can be inspected and rebuilt.
-All rights reserved until a license is added.
+The frothy code here is under the [frothy Run-Only License 1.0](LICENSE):
+you may copy, build and run it, including commercially, and everything it
+produces is yours to use however you like. You may not redistribute it,
+modify it or build on it, use its code elsewhere, or run it for others as
+a service. WRF and WPS remain public domain under their own terms, and the
+image's Fedora packages are listed in its SBOM under theirs.
