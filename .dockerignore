@@ -1,0 +1,9 @@
+# Build context allowlist: only what image/Dockerfile copies.
+*
+!image/
+!worker/
+**/.env
+**/.env.*
+**/__pycache__
+**/*.pyc
+**/.DS_Store

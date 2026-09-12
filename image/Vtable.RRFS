@@ -1,0 +1,52 @@
+GRIB1| Level| From |  To  | metgrid  |  metgrid| metgrid                                 |GRIB2|GRIB2|GRIB2|GRIB2|
+Param| Type |Level1|Level2| Name     |  Units  | Description                             |Discp|Catgy|Param|Level|
+-----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
+  11 | 100  |   *  |      | TT       | K       | Temperature                             |  0  |  0  |  0  | 100 |
+  33 | 100  |   *  |      | UU       | m s-1   | U                                       |  0  |  2  |  2  | 100 |
+  34 | 100  |   *  |      | VV       | m s-1   | V                                       |  0  |  2  |  3  | 100 |
+  52 | 100  |   *  |      | RH       | %       | Relative Humidity                       |  0  |  1  |  1  | 100 |
+   7 | 100  |   *  |      | HGT      | m       | Height                                  |  0  |  3  |  5  | 100 |
+  11 | 105  |   2  |      | TT       | K       | Temperature       at 2 m                |  0  |  0  |  0  | 103 |
+     | 105  |   2  |      | RH       | %       | Relative Humidity at 2 m (n/a in p file)|  0  |  1  |  1  | 103 |
+  51 | 105  |   2  |      | SPECHUMD | kg kg-1 |                                         |  0  |  1  |  0  | 103 |
+  33 | 105  |  10  |      | UU       | m s-1   | U                 at 10 m               |  0  |  2  |  2  | 103 |
+  34 | 105  |  10  |      | VV       | m s-1   | V                 at 10 m               |  0  |  2  |  3  | 103 |
+   1 |   1  |   0  |      | PSFC     | Pa      | Surface Pressure                        |  0  |  3  |  0  |   1 |
+ 129 | 102  |   0  |      | PMSL     | Pa      | Sea-level Pressure (RRFS MSLET)         |  0  |  3  | 192 | 101 |
+   7 |   1  |   0  |      | SOILHGT  | m       | Terrain field of source analysis        |  0  |  3  |  5  |   1 |
+  65 |   1  |   0  |      | SNOW     | kg m-2  | Water equivalent snow depth             |  0  |  1  | 13  |   1 |
+  11 |   1  |   0  |      | SKINTEMP | K       | Temperature at ground sfc (from s file) |  0  |  0  |  0  |   1 |
+ 144 | 111  |   0  |      | SOILM000 | fraction | Soil Moist   0 cm below ground          |  2  |  0  | 192 | 106 | 
+ 144 | 111  |   1  |      | SOILM001 | fraction | Soil Moist   1 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  |   4  |      | SOILM004 | fraction | Soil Moist   4 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  |  10  |      | SOILM010 | fraction | Soil Moist  10 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  |  30  |      | SOILM030 | fraction | Soil Moist  30 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  |  60  |      | SOILM060 | fraction | Soil Moist  60 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  | 100  |      | SOILM100 | fraction | Soil Moist 100 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  | 160  |      | SOILM160 | fraction | Soil Moist 160 cm below ground          |  2  |  0  | 192 | 106 |
+ 144 | 111  | 300  |      | SOILM300 | fraction | Soil Moist 300 cm below ground          |  2  |  0  | 192 | 106 |
+  85 | 111  |   0  |      | SOILT000 | K        | Soil Temp    0 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  |   1  |      | SOILT001 | K        | Soil Temp    1 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  |   4  |      | SOILT004 | K        | Soil Temp    4 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  |  10  |      | SOILT010 | K        | Soil Temp   10 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  |  30  |      | SOILT030 | K        | Soil Temp   30 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  |  60  |      | SOILT060 | K        | Soil Temp   60 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  | 100  |      | SOILT100 | K        | Soil Temp  100 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  | 160  |      | SOILT160 | K        | Soil Temp  160 cm below ground          |  2  |  0  |  2  | 106 |
+  85 | 111  | 300  |      | SOILT300 | K        | Soil Temp  300 cm below ground          |  2  |  0  |  2  | 106 |
+-----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
+#
+#  Vtable for RRFS (Rapid Refresh Forecast System) initialization from the
+#  prslev + 2dfld product pair on the 3 km CONUS grid — see
+#  image/runner.py download_rrfs.
+#
+#  Composite table: the atmosphere/surface rows are WPS's
+#  Vtable.RAP.pressure.ncep (RRFS prslev is RAP-pressure-shaped: isobaric
+#  TT/UU/VV/RH/HGT plus sfc/2m/10m/MSL — with PMSL remapped 198->192: RRFS publishes
+#  MSLET (Eta reduction, 0-3-192), not RAP's MSLMA), and the RUC
+#  9-level soil rows are lifted from Vtable.raphrrr — the RAP pressure
+#  table itself carries NO soil ("Soil fields are in the hybrid-coordinate
+#  files"), and without them metgrid writes met_em with no soil
+#  dimensions. RRFS 2dfld encodes soil as TSOIL 2-0-2, SOILW 2-0-192, both
+#  fixed surfaces type 106, depths 0/1/4/10/30/60/100/160/300 cm.
+#

@@ -1,0 +1,20 @@
+{
+ "region": "sample",
+ "domain": "d02",
+ "rects": [
+  {
+   "id": "sf-bay",
+   "name": "San Francisco Bay",
+   "north": 38.2,
+   "south": 37.4,
+   "west": -122.8,
+   "east": -121.9
+  }
+ ],
+ "output": {
+  "grid_deg": 0.01,
+  "png": false,
+  "geotiff": false
+ },
+ "model": "sample-sfbay-3km"
+}

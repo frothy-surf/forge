@@ -1,0 +1,175 @@
+name: CI
+
+# Builds the frothy forge image natively on amd64 and arm64, verifies each,
+# assembles one multi-arch index, signs it (keyless cosign), and publishes it
+# to registry.frothy.surf. Secrets (publish only): R2_ACCESS_KEY_ID,
+# R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID — without them the publish
+# step skips and the build/sign still run.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORGE: ghcr.io/${{ github.repository }}
+  R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Portable ISA baselines, never 'native': the runner is not the
+          # machine the image will run on.
+          - arch: amd64
+            runner: ubuntu-latest
+            march: x86-64-v3
+            jobs: ""
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            march: armv8.2-a
+            jobs: "4"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shipped-file hygiene
+        run: scripts/check-shipped-hygiene.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The WRF compile (~1 h) is cached in the registry until the build
+      # scripts or WRF/WPS versions change; attestations ride inside the
+      # index: provenance mode=max embeds this Dockerfile and the build
+      # args, the SBOM is syft's SPDX scan of the final stage.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: image/Dockerfile
+          target: forge
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.FORGE }}:${{ github.sha }}-${{ matrix.arch }}
+          build-args: |
+            WRF_MARCH=${{ matrix.march }}
+            WRF_TOOLCHAIN=gnu
+            WRF_PARALLEL=dm+sm
+            BUILD_JOBS=${{ matrix.jobs }}
+            IMAGE_REV=${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.FORGE }}:cache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.FORGE }}:cache-${{ matrix.arch }},mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Verify the image
+        run: scripts/verify-forge-image.sh ${{ env.FORGE }}:${{ github.sha }}-${{ matrix.arch }}
+
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+      # keyless cosign: the OIDC token proves this workflow (repo + path +
+      # ref) to Fulcio, which is the identity users verify against
+      id-token: write
+    env:
+      SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/heads/main
+      OIDC_ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - name: Assemble multi-arch :latest / :sha
+        id: index
+        run: |
+          docker buildx imagetools create \
+            -t ${FORGE}:latest -t ${FORGE}:${{ github.sha }} \
+            ${FORGE}:${{ github.sha }}-amd64 ${FORGE}:${{ github.sha }}-arm64
+          docker buildx imagetools inspect ${FORGE}:${{ github.sha }} | tee /tmp/index.txt
+          for p in linux/amd64 linux/arm64; do
+            grep -q "Platform:.*$p" /tmp/index.txt || { echo "index lacks $p"; exit 1; }
+          done
+          n=$(docker buildx imagetools inspect ${FORGE}:${{ github.sha }} --format '{{json .SBOM}}' \
+                | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Object.keys(JSON.parse(s)||{}).length))')
+          [ "$n" = 2 ] || { echo "expected an SBOM for 2 platforms, found $n"; exit 1; }
+          digest=$(docker buildx imagetools inspect ${FORGE}:${{ github.sha }} --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "index $digest: amd64+arm64, provenance+SBOM per platform"
+
+      # One signature over the index digest covers both platforms and both
+      # tags. The signature lands beside the image as the
+      # sha256-<digest>.sig tag, which the registry sync below mirrors.
+      - name: Sign (cosign keyless)
+        run: |
+          cosign sign --yes ${FORGE}@${{ steps.index.outputs.digest }}
+          cosign verify ${FORGE}@${{ steps.index.outputs.digest }} \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer "$OIDC_ISSUER" > /dev/null
+          echo "signed and verified on GHCR as $SIGNER_IDENTITY"
+
+      # registry.frothy.surf is a pull-only OCI endpoint over an R2 bucket:
+      # GHCR image → OCI layout → the endpoint's key layout → aws s3 sync.
+      - name: Publish to registry.frothy.surf
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q skopeo
+          skopeo copy --all \
+            --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            docker://${FORGE}:${{ github.sha }} oci:/tmp/forge-oci:latest
+          node scripts/oci-to-r2.mjs /tmp/forge-oci frothy-forge latest /tmp/registry-stage
+          node scripts/oci-to-r2.mjs /tmp/forge-oci frothy-forge "${{ github.sha }}" /tmp/registry-stage
+          sig_tag="$(echo '${{ steps.index.outputs.digest }}' | sed 's/^sha256:/sha256-/').sig"
+          skopeo copy \
+            --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            "docker://${FORGE}:${sig_tag}" "oci:/tmp/sig-oci:${sig_tag}"
+          node scripts/oci-to-r2.mjs /tmp/sig-oci frothy-forge "${sig_tag}" /tmp/registry-stage
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
+                 AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
+                 AWS_DEFAULT_REGION=auto \
+                 AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+                 AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+          aws s3 sync /tmp/registry-stage "s3://blip-registry/" \
+            --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --size-only
+          # tag manifests keep their byte length across builds (only digests
+          # change), so --size-only would skip them: always rewrite tags
+          aws s3 cp --recursive /tmp/registry-stage/frothy-forge/manifests \
+            "s3://blip-registry/frothy-forge/manifests/" \
+            --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          echo "registry.frothy.surf/frothy-forge:{latest,${{ github.sha }}} (amd64+arm64) updated"
+
+      - name: Verify the published image as a user would
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        run: |
+          pub=registry.frothy.surf/frothy-forge
+          got=$(docker buildx imagetools inspect ${pub}:${{ github.sha }} --format '{{.Manifest.Digest}}')
+          [ "$got" = "${{ steps.index.outputs.digest }}" ] || { echo "registry serves $got, expected ${{ steps.index.outputs.digest }}"; exit 1; }
+          for t in "${{ github.sha }}" latest; do
+            cosign verify ${pub}:$t \
+              --certificate-identity "$SIGNER_IDENTITY" \
+              --certificate-oidc-issuer "$OIDC_ISSUER" > /dev/null
+          done
+          docker buildx imagetools inspect ${pub}:latest --format '{{json .SBOM}}' \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const o=JSON.parse(s);for(const [k,v] of Object.entries(o)){const n=(v.SPDX?.packages||[]).length;console.log(k,n,"packages");if(n<50)process.exit(1)}})'
+          docker buildx imagetools inspect ${pub}:latest --format '{{json .Provenance}}' \
+            | grep -q '"configSource"' || { echo "provenance missing"; exit 1; }
+          echo "public image verifies: signature, SBOM, provenance"

@@ -1,0 +1,19 @@
+# Files that ship in the public forge image or are embedded in its provenance.
+# scripts/check-shipped-hygiene.sh polices them; scripts/sync-public-forge.sh
+# mirrors them (plus the tooling listed there) into the public reference repo
+# github.com/frothy-surf/forge, at these same paths.
+image/Dockerfile
+image/toolchain.sh
+image/build_wrf.sh
+image/build_wps.sh
+image/build_netcdf_fortran.sh
+image/select_build_option.py
+image/Vtable.RRFS
+image/Vtable.GFS_NOSOIL
+image/Vtable.ERA5
+image/runner.py
+image/local_run.py
+image/local_telemetry.py
+worker/extract_wind.py
+worker/crash_classify.py
+worker/hrrr_fetch.py
