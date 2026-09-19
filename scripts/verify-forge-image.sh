@@ -56,7 +56,10 @@ docker run --rm --user 4242:4242 \
 grep -q "dry run: workdir staged" "$out/dry-run.log" || { cat "$out/dry-run.log"; exit 1; }
 # namelists/tables are copies; WRF run files (LANDUSE.TBL, ...) are symlinks
 # to /opt/blip/wrf_run, dangling from the host's point of view — hence -L
-for f in namelist.wps namelist.input GEOGRID.TBL METGRID.TBL Vtable LANDUSE.TBL; do
+# The three .dat files are the precomputed Thompson microphysics tables:
+# without them staged, wrf.exe spends minutes recomputing them per run.
+for f in namelist.wps namelist.input GEOGRID.TBL METGRID.TBL Vtable LANDUSE.TBL \
+         qr_acr_qg_V4.dat qr_acr_qsV2.dat freezeH2O.dat; do
   [ -e "$out/work/$f" ] || [ -L "$out/work/$f" ] \
     || { echo "dry run did not stage $f"; ls "$out/work"; exit 1; }
 done

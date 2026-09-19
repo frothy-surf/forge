@@ -73,6 +73,14 @@ for rect in rects:
             fail(f"{os.path.basename(path)} has non-physical wind speeds")
     print(f"rect {rect}: {len(frames)} frames, last max {max(speeds):.1f} kt over {len(speeds)} cells")
 
+# Thompson microphysics (the CONUS suite's scheme) reads its lookup tables
+# from the run directory and quietly computes them — minutes of startup —
+# when they are missing or unreadable. The image ships them; a run that
+# computed one means they were not built, not staged, or not readable.
+for path in glob.glob(os.path.join(out, "work", "rsl.*.0000")) + glob.glob(os.path.join(out, "work", "LOG", "*")):
+    if "ThompMP: computing" in open(path, errors="replace").read():
+        fail(f"wrf.exe computed Thompson lookup tables ({os.path.basename(path)}): the image's copies were not used")
+
 if not glob.glob(os.path.join(out, "work", "wrfout_d01_*")):
     fail("no wrfout files in the work dir")
 print("smoke OK")

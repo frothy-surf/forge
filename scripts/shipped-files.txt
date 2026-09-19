@@ -7,6 +7,8 @@ image/toolchain.sh
 image/build_wrf.sh
 image/build_wps.sh
 image/build_netcdf_fortran.sh
+image/build_thompson_tables.sh
+image/thompson_tables.f90
 image/select_build_option.py
 image/Vtable.RRFS
 image/Vtable.GFS_NOSOIL

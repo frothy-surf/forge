@@ -1,8 +1,9 @@
 ! Image smoke input: one 31x31 domain at 30 km over the same center as the
 ! sample bundle, on WRF's stock CONUS suite. Sized to integrate in seconds;
-! it validates the image's machinery, not the weather. Microphysics is WSM6:
-! the suite's Thompson scheme spends five minutes computing lookup tables
-! into every fresh run directory.
+! it validates the image's machinery, not the weather. The suite's Thompson
+! microphysics is left in on purpose: it only starts in seconds because the
+! image ships the scheme's lookup tables, and the smoke test fails if
+! wrf.exe had to compute them.
  &time_control
  run_days                            = 0,
  run_hours                           = 3,
@@ -56,7 +57,7 @@
 
  &physics
  physics_suite                       = 'CONUS'
- mp_physics                          = 6,
+ mp_physics                          = -1,    -1,
  cu_physics                          = -1,    -1,
  ra_lw_physics                       = -1,    -1,
  ra_sw_physics                       = -1,    -1,

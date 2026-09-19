@@ -110,6 +110,15 @@ RUN dnf install -y cmake && dnf clean all \
 COPY image/build_wps.sh /build/image/
 RUN bash image/build_wps.sh
 
+# Thompson microphysics lookup tables (mp_physics 8/28; physics_suite CONUS).
+# wrf.exe computes them at startup when they are not in the run directory —
+# minutes of a single core, again on every run that starts in a fresh work
+# dir — so compute them once here with this build's own code and ship them
+# with the other runtime tables. Last in the stage: it needs only the WRF
+# tree, and nothing above is invalidated by editing it.
+COPY image/build_thompson_tables.sh image/thompson_tables.f90 /build/image/
+RUN bash image/build_thompson_tables.sh
+
 # ---------- base stage: runtime deps, executables, stock tables ----------
 # Nothing frothy-specific lives here beyond the build-identity env; both the
 # public forge image and the hosted-service image start from it.
@@ -186,6 +195,10 @@ COPY --from=build /build/WPS/geogrid/src/geogrid.exe /build/WPS/ungrib/src/ungri
   /build/WPS/metgrid/src/metgrid.exe /build/WPS/util/src/avg_tsfc.exe $BASEDIR/bin/
 # Static tables WRF reads at runtime (landuse, radiation, ozone, ...)
 COPY --from=build /build/WRF/run/ $BASEDIR/wrf_run/
+# ...and the precomputed Thompson tables beside them: the runner links
+# everything in wrf_run/ into the work dir, and WRF reads a table it finds
+# there instead of computing it.
+COPY --from=build /build/thompson_tables/ $BASEDIR/wrf_run/
 # WPS tables: stock geogrid/metgrid tables and the boundary-source variable
 # tables. WPS names the RAP/HRRR table Vtable.raphrrr; the runner selects it
 # as Vtable.HRRR for boundary_source=hrrr (see runner.py stage_workdir and
