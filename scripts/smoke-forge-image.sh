@@ -46,9 +46,11 @@ out, inp, hours = sys.argv[1], sys.argv[2], int(sys.argv[3])
 fail = lambda m: sys.exit(f"smoke FAILED: {m}")
 
 log = open(os.path.join(out, "run.log")).read()
-for stage in ("geogrid.exe", "ungrib.exe", "metgrid.exe", "real.exe", "wrf.exe"):
+for stage in ("geogrid.exe", "ungrib.exe", "metgrid.exe", "real.exe"):
     if not any("exec:" in line and stage in line for line in log.splitlines()):
         fail(f"{stage} never ran")
+if "timing total:" not in log:  # the runner's summary of wrf.exe's integration
+    fail("wrf.exe did not integrate")
 if "run complete" not in log:
     fail("runner did not report completion")
 
