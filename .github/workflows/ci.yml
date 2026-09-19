@@ -1,7 +1,8 @@
 name: CI
 
 # Builds the frothy forge image natively on amd64 and arm64, verifies each,
-# assembles one multi-arch index, signs it (keyless cosign), and publishes it
+# runs a real forecast through each (the smoke job), assembles one
+# multi-arch index, signs it (keyless cosign), and publishes it
 # to registry.frothy.surf. Secrets (publish only): R2_ACCESS_KEY_ID,
 # R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID — without them the publish
 # step skips and the build/sign still run.
@@ -86,10 +87,69 @@ jobs:
       - name: Verify the image
         run: scripts/verify-forge-image.sh ${{ env.FORGE }}:${{ github.sha }}-${{ matrix.arch }}
 
+  # One real forecast per (host, input) through the image just built, before
+  # anything is published: geogrid on UCAR's low-resolution static data, a
+  # live GFS fetch, ungrib, metgrid, real, wrf, and the wind products. The
+  # inputs are forge bundles sized to integrate in seconds (examples/smoke/);
+  # add a directory there and a matrix entry here to cover another shape of
+  # user data. publish needs this job, so a build that cannot run a forecast
+  # never becomes :latest.
+  #
+  # Hosts: the image is a Linux container everywhere. linux/amd64 is what
+  # Docker on Windows (WSL 2) and Intel Macs runs, linux/arm64 is what Apple
+  # Silicon runs — both are exercised natively. The macOS leg adds the part
+  # that differs on a desktop: Docker inside a VM, the bundle/geog/out
+  # directories shared into it from the host's home directory. GitHub's
+  # hosted Windows runners cannot run Linux containers, and its Apple
+  # Silicon runners have no nested virtualization, so those two hosts are
+  # covered by architecture only.
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        input: [tiny-lcc]
+        host:
+          - { name: linux-amd64, runner: ubuntu-latest, arch: amd64 }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, arch: arm64 }
+          - { name: macos-intel-vm, runner: macos-15-intel, arch: amd64, experimental: true }
+    name: smoke (${{ matrix.host.name }}, ${{ matrix.input }})
+    runs-on: ${{ matrix.host.runner }}
+    continue-on-error: ${{ matrix.host.experimental || false }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker in a VM (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        uses: douglascamata/setup-docker-macos-action@v1
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/forge-smoke/WPS_GEOG_LOW_RES
+          key: wps-geog-low-res-v1
+      - name: Run a forecast
+        run: scripts/smoke-forge-image.sh ${{ env.FORGE }}:${{ github.sha }}-${{ matrix.host.arch }} examples/smoke/${{ matrix.input }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: smoke-${{ matrix.host.name }}-${{ matrix.input }}
+          path: |
+            ~/.cache/forge-smoke/out/**/run.log
+            ~/.cache/forge-smoke/out/**/work/rsl.error.0000
+            ~/.cache/forge-smoke/out/**/work/*.log
+          retention-days: 7
+
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build
+    needs: [build, smoke]
     permissions:
       contents: read
       packages: write

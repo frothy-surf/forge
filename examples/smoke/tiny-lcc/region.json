@@ -1,0 +1,14 @@
+{
+ "timezone": "UTC",
+ "grib": {
+  "left_lon": -130,
+  "right_lon": -115,
+  "bottom_lat": 30,
+  "top_lat": 45
+ },
+ "forecast_hours": 3,
+ "boundary_interval_hours": 3,
+ "domains": 1,
+ "boundary_source": "gfs",
+ "model": "smoke-tiny-lcc"
+}

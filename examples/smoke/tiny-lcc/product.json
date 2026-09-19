@@ -1,0 +1,20 @@
+{
+ "region": "smoke",
+ "domain": "d01",
+ "rects": [
+  {
+   "id": "box",
+   "name": "smoke box",
+   "north": 39.5,
+   "south": 36.0,
+   "west": -125.0,
+   "east": -120.0
+  }
+ ],
+ "output": {
+  "grid_deg": 0.1,
+  "png": false,
+  "geotiff": false
+ },
+ "model": "smoke-tiny-lcc"
+}
