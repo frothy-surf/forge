@@ -4,8 +4,10 @@ name: CI
 # runs a real forecast through each (the smoke job), assembles one
 # multi-arch index, signs it (keyless cosign), and publishes it
 # to registry.frothy.surf. Secrets (publish only): R2_ACCESS_KEY_ID,
-# R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID — without them the publish
-# step skips and the build/sign still run.
+# R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID. On main they are required:
+# a run that cannot publish fails, so green always means
+# registry.frothy.surf serves this commit. Elsewhere (forks, dispatches from
+# other refs) the publish step skips and the build/sign still run.
 
 on:
   push:
@@ -161,6 +163,19 @@ jobs:
       OIDC_ISSUER: https://token.actions.githubusercontent.com
     steps:
       - uses: actions/checkout@v4
+      # Checked first, before anything is signed: on main a missing secret
+      # is a broken release pipeline, not a reason to skip quietly.
+      - name: Publish credentials present (main)
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          missing=""
+          [ -n "$R2_ACCESS_KEY_ID" ] || missing="$missing R2_ACCESS_KEY_ID"
+          [ -n "$R2_SECRET_ACCESS_KEY" ] || missing="$missing R2_SECRET_ACCESS_KEY"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::cannot publish to registry.frothy.surf — repository secret(s) not set:$missing"
+            exit 1
+          fi
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
