@@ -667,12 +667,15 @@ def _want_rrfs_prs(var, level, timedesc):
 # the same variable names the HRRR wrfprsf subset uses (MSL is MSLET).
 _want_rrfs_sfc = _want_hrrr_sfc
 
-RRFS_ORIGINS = ["https://noaa-rrfs-pds.s3.amazonaws.com"]
+# The operational/para bucket (SCN 26-048). The rrfs_a prototype prefix on
+# noaa-rrfs-pds was deleted in August 2026; layout here is rrfs.YYYYMMDD/HH/
+# with .idx sidecars, same file names, same 3 km CONUS Lambert grid.
+RRFS_ORIGINS = ["https://noaa-rrfs-ops-pds.s3.amazonaws.com"]
 
 
 def _rrfs_urls(cycle_dt, product, fh):
     name = f"rrfs.t{cycle_dt:%H}z.{product}.3km.f{fh:03d}.conus.grib2"
-    return [f"{o}/rrfs_a/rrfs.{cycle_dt:%Y%m%d}/{cycle_dt:%H}/{name}"
+    return [f"{o}/rrfs.{cycle_dt:%Y%m%d}/{cycle_dt:%H}/{name}"
             for o in RRFS_ORIGINS]
 
 

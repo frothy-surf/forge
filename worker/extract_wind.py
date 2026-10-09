@@ -209,6 +209,35 @@ def canonical_stamp(stamp):
     return stamp[:17] + "00"
 
 
+def load_station_series(spath, append):
+    """The run's point timeseries so far, when appending onto an existing
+    stations.json (an earlier chunk, another domain, or the published file a
+    re-claim restored); empty otherwise."""
+    if append and spath.exists():
+        return json.loads(spath.read_text()).get("stations", {})
+    return {}
+
+
+def put_station_sample(samples, stamp, sample):
+    """Dict union by timestamp: a new stamp is added, an existing one is
+    replaced only by a sample from a finer (or equal) domain — nested domains
+    both sample a station they cover, and the smaller dx wins. `sample` is
+    [speed_kts, speed2m_kts, dir_from_deg, dx_m, gust_kts]."""
+    prev = samples.get(stamp)
+    if prev is None or prev[3] >= sample[3]:
+        samples[stamp] = sample
+
+
+def write_station_series(spath, stations_out, generated):
+    for rec in stations_out.values():
+        rec["samples"] = dict(sorted(rec["samples"].items()))
+    spath.write_text(json.dumps(
+        {"stations": stations_out,
+         "fields": ["speed_kts", "speed2m_kts", "dir_from_deg", "dx_m", "gust_kts"],
+         "generated": generated},
+        separators=(",", ":")))
+
+
 def frame_times(nc):
     raw = nc.variables["Times"][:]
     return [canonical_stamp("".join(t.astype(str)).replace("_", "T")) for t in raw]
@@ -302,9 +331,7 @@ def main():
     # sample a station they cover; the finer sample (smaller dx) wins.
     stations = json.loads(Path(args.stations).read_text()) if args.stations else []
     spath = out_root / "stations.json"
-    stations_out = {}
-    if stations and args.append and spath.exists():
-        stations_out = json.loads(spath.read_text()).get("stations", {})
+    stations_out = load_station_series(spath, args.append) if stations else {}
     st_ids, st_fi, st_fj = [], None, None
 
     for input_path in sorted(args.inputs):
@@ -391,16 +418,14 @@ def main():
                 sdir = (np.degrees(np.arctan2(-su, -sv)) + 360.0) % 360.0
                 dx = int(round(grid.dx))
                 for k, sid in enumerate(st_ids):
-                    prev = stations_out[sid]["samples"].get(stamp)
-                    if prev is None or prev[3] >= dx:  # finer domain wins
-                        stations_out[sid]["samples"][stamp] = [
-                            round(float(sspd[k]), 1),
-                            round(float(sspd[k] * sred[k]), 1),
-                            int(round(float(sdir[k]))) % 360,
-                            dx,
-                            (round(float(sgust[k]) * 1.9438445, 1)
-                             if sgust is not None else None),
-                        ]
+                    put_station_sample(stations_out[sid]["samples"], stamp, [
+                        round(float(sspd[k]), 1),
+                        round(float(sspd[k] * sred[k]), 1),
+                        int(round(float(sdir[k]))) % 360,
+                        dx,
+                        (round(float(sgust[k]) * 1.9438445, 1)
+                         if sgust is not None else None),
+                    ])
 
             for rect in cfg["rects"]:
                 # rect-level grid: a 2 km-domain rect published at the global
@@ -494,13 +519,7 @@ def main():
     manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     mpath.write_text(json.dumps(manifest, indent=1))
     if stations:
-        for rec in stations_out.values():
-            rec["samples"] = dict(sorted(rec["samples"].items()))
-        spath.write_text(json.dumps(
-            {"stations": stations_out,
-             "fields": ["speed_kts", "speed2m_kts", "dir_from_deg", "dx_m", "gust_kts"],
-             "generated": manifest["generated"]},
-            separators=(",", ":")))
+        write_station_series(spath, stations_out, manifest["generated"])
     print(f"wrote {len(manifest['frames'])} frames to {out_root}")
 
 
