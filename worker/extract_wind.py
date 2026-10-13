@@ -209,6 +209,50 @@ def canonical_stamp(stamp):
     return stamp[:17] + "00"
 
 
+def point_in_polygon(x, y, poly):
+    """Ray casting for numpy arrays x, y against a [[lon, lat], ...] ring."""
+    inside = np.zeros(np.shape(x), dtype=bool)
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        cross = (yi > y) != (yj > y)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xint = (xj - xi) * (y - yi) / (yj - yi) + xi
+        inside ^= cross & (x < xint)
+        j = i
+    return inside
+
+
+def area_cells(grid, polygon):
+    """Native-grid cells an insight area is read over: the WATER cells whose
+    centres fall inside the ring; when the ring is narrower than the grid
+    and holds none, the nearest water cells within a cell and a half of its
+    centroid (a launch area hugs the shore, and the nearest cell is often
+    land); None when there are no water cells near it at all, which the
+    caller samples as a point. -> boolean mask over grid.lat/grid.lon."""
+    poly = [(float(a), float(b)) for a, b in polygon]
+    lons = [a for a, _ in poly]
+    lats = [b for _, b in poly]
+    bbox = (min(lons) <= grid.lon) & (grid.lon <= max(lons)) & (min(lats) <= grid.lat) & (grid.lat <= max(lats))
+    water = grid.landmask < 0.5
+    mask = bbox & water
+    if mask.any():
+        mask &= point_in_polygon(grid.lon, grid.lat, poly)
+        if mask.any():
+            return mask
+    cx, cy = (min(lons) + max(lons)) / 2.0, (min(lats) + max(lats)) / 2.0
+    fi, fj = grid.frac_index([cx], [cy])
+    ii, jj = np.meshgrid(np.arange(grid.nx), np.arange(grid.ny))
+    dist = np.hypot(ii - fi[0], jj - fj[0])
+    near = water & (dist <= 1.5)
+    if not near.any():
+        return None
+    best = dist[near].min()
+    return near & (dist <= best + 0.5)
+
+
 def load_station_series(spath, append):
     """The run's point timeseries so far, when appending onto an existing
     stations.json (an earlier chunk, another domain, or the published file a
@@ -303,9 +347,10 @@ def main():
     ap.add_argument("--append", action="store_true",
                     help="merge frames into an existing manifest (progressive publishing)")
     ap.add_argument("--stations",
-                    help="JSON list of {id, lat, lon}: sample the model at these points "
-                         "each frame and accumulate <out>/stations.json (point timeseries "
-                         "for the frontend's sensor cards)")
+                    help="JSON list of {id, lat, lon[, polygon]}: sample the model at these "
+                         "points (or over these areas' native water cells) each frame and "
+                         "accumulate <out>/stations.json (point timeseries for the sensor "
+                         "cards and the spot insights)")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
@@ -333,6 +378,7 @@ def main():
     spath = out_root / "stations.json"
     stations_out = load_station_series(spath, args.append) if stations else {}
     st_ids, st_fi, st_fj = [], None, None
+    area_masks = []
 
     for input_path in sorted(args.inputs):
         nc = Dataset(input_path)
@@ -343,13 +389,27 @@ def main():
                                          [s["lat"] for s in stations])
                 inside = [k for k in range(len(stations))
                           if 0 <= fi[k] <= grid.nx - 1 and 0 <= fj[k] <= grid.ny - 1]
-                st_ids = [stations[k]["id"] for k in inside]
-                st_fi = np.asarray([fi[k] for k in inside])
-                st_fj = np.asarray([fj[k] for k in inside])
+                # Insight areas (entries with a polygon) are read as a mean over
+                # their native water cells; an area too small to hold a cell
+                # centre, or with no water cell near it, falls back to its
+                # centroid as a point. The finer domain's sample still wins.
+                area_masks = []
+                point_ks = []
                 for k in inside:
                     s = stations[k]
                     stations_out.setdefault(
                         s["id"], {"lat": s["lat"], "lon": s["lon"], "samples": {}})
+                    mask = area_cells(grid, s["polygon"]) if s.get("polygon") else None
+                    if mask is not None:
+                        area_masks.append((s["id"], mask))
+                    else:
+                        point_ks.append(k)
+                st_ids = [stations[k]["id"] for k in point_ks]
+                st_fi = np.asarray([fi[k] for k in point_ks])
+                st_fj = np.asarray([fj[k] for k in point_ks])
+                if area_masks:
+                    log(f"{len(area_masks)} insight area(s) read over native water cells: "
+                        + ", ".join(f"{sid} ({int(m.sum())} cells)" for sid, m in area_masks))
         times = frame_times(nc)
         for it, stamp in enumerate(times):
             u10 = np.asarray(nc.variables["U10"][it])
@@ -408,6 +468,17 @@ def main():
                                   0.9 * np.clip(ust / 0.6, 0.0, 1.0), 0.0)
                 w = np.clip(np.maximum(w_stab, w_mech), 0.15, 0.9)
                 mixed = spd10 + w * (gust - spd10)
+
+            dx_m = int(round(grid.dx))
+            for sid, mask in area_masks:
+                au, av = float(ue[mask].mean()), float(ve[mask].mean())
+                aspd = float(np.hypot(ue[mask], ve[mask]).mean()) * 1.9438445
+                adir = (np.degrees(np.arctan2(-au, -av)) + 360.0) % 360.0
+                ared = float(reduction[mask].mean())
+                agust = (round(float(gust[mask].mean()) * 1.9438445, 1)
+                         if gust is not None else None)
+                put_station_sample(stations_out[sid]["samples"], stamp, [
+                    round(aspd, 1), round(aspd * ared, 1), int(round(adir)) % 360, dx_m, agust])
 
             if st_ids:
                 su = grid.bilinear(ue, st_fi, st_fj)
