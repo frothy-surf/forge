@@ -41,6 +41,13 @@ KARMAN, GRAV, CP, RD = 0.4, 9.81, 1004.5, 287.04
 GUST_ALPHA = 7.71
 
 
+def log(msg):
+    """Progress line on stderr: the caller captures stdout for the summary
+    and keeps the tail of both streams when an extraction fails."""
+    print(f"[{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}] {msg}",
+          file=sys.stderr, flush=True)
+
+
 def psi_m(zeta):
     """Businger-Dyer stability function for momentum."""
     zeta = np.clip(zeta, -10.0, 2.0)
