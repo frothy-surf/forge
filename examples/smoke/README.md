@@ -17,3 +17,12 @@ machine.
 
 A new input is a directory here with the four bundle files, plus its name in
 the smoke job's `input` matrix.
+
+`tiny-lcc/stations.json` is an optional third argument to the script: a
+stations list in the shape `extract_wind.py --stations` takes (`{id, lat,
+lon}` points and `{..., polygon}` areas). The script then runs the extractor a
+second time over the forecast's output with it and checks that every point got
+a timeseries and every polygon was read as a mean over native water cells —
+the sampling path a plain forecast never exercises.
+
+    scripts/smoke-forge-image.sh <image> examples/smoke/tiny-lcc examples/smoke/tiny-lcc/stations.json
