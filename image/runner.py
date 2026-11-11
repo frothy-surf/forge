@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -247,26 +248,42 @@ def check_decomposition(workdir, ranks, ndom):
 # wrf.exe segfaults on the first nest step. Floor = 2: every proven-working
 # layout is untouched, 1-row outer strips are not allowed.
 MIN_D01_TILE_ROWS = 2
+# Strips of exactly 3 rows at a domain's high edge are a separate matter:
+# stock WRF writes out of bounds in cal_helicity there, and build_wrf.sh
+# patches the source. A binary built without that patch needs
+# BLIP_MIN_TILE_ROWS=4 on a grid where a thread count leaves such a strip.
 
 
-def cap_threads_for_d01(workdir, threads):
-    """Cap OpenMP threads so EVERY domain's row-strips stay >=
-    MIN_D01_TILE_ROWS. Capping on d01 alone is not enough: an outer domain
-    of 60 rows allows 30 threads, but a 55-row nest under it then tiles
-    thinner than the floor and WRF segfaults at that nest's first tile
-    pass. The binding constraint is the SMALLEST domain."""
+def min_tile_rows():
+    return _int_or_none(os.environ.get("BLIP_MIN_TILE_ROWS")) or MIN_D01_TILE_ROWS
+
+
+def cap_threads_for_d01(workdir, threads, ranks=1):
+    """Cap OpenMP threads so EVERY domain's row-strips stay >= the floor.
+    Capping on d01 alone is not enough: an outer domain of 60 rows allows
+    30 threads, but a 55-row nest under it then tiles thinner than the
+    floor and WRF segfaults at that nest's first tile pass. The binding
+    constraint is the SMALLEST domain.
+
+    Threads tile a rank's PATCH, not the domain: 3 ranks x 6 threads cut
+    a 46-row nest into 15-row patches, and it is those the strips divide. WRF may orient the rank mesh either way, so the
+    longer side of the mesh is assumed to divide the rows."""
     text = (workdir / "namelist.input").read_text()
     sn = _namelist_ints(text, "e_sn")
     ndom = (_namelist_ints(text, "max_dom") or [len(sn)])[0]
     rows = sn[:ndom] if sn else []
     if not rows or threads <= 1:
         return threads
-    binding = min(rows)
-    allowed = max(1, binding // MIN_D01_TILE_ROWS)
+    floor = min_tile_rows()
+    split = max(rank_mesh(max(1, ranks)))
+    binding = min(rows) // split
+    allowed = max(1, binding // floor)
     if threads > allowed:
-        log(f"{threads} OpenMP threads would tile the {binding}-row domain "
+        where = (f"{binding}-row patches of the {min(rows)}-row domain"
+                 if split > 1 else f"{binding}-row domain")
+        log(f"{threads} OpenMP threads would tile the {where} "
             f"(smallest of {rows}) into {max(1, binding // threads)}-row strips "
-            f"(minimum {MIN_D01_TILE_ROWS}); using {allowed}")
+            f"(minimum {floor}); using {allowed}")
         return allowed
     return threads
 
@@ -719,6 +736,11 @@ def download_rrfs(cfg, cycle_dt, hours, grib_dir, workdir):
             forcing_r2_put(cfg, "rrfs", cycle_dt, target.name, target)
 
 
+# NOMADS keeps about ten days of GFS; a day inside that is left for its
+# rolling cleanup, and a wrong guess only costs the larger archive file.
+NOMADS_RETENTION_DAYS = 9
+
+
 def download_gfs(cfg, cycle_dt, hours, grib_dir):
     grib_dir.mkdir(parents=True, exist_ok=True)
     g = cfg["grib"]
@@ -728,6 +750,13 @@ def download_gfs(cfg, cycle_dt, hours, grib_dir):
         "leftlon": g["left_lon"], "rightlon": g["right_lon"],
         "bottomlat": g["bottom_lat"], "toplat": g["top_lat"],
     }
+    cycle_utc = (cycle_dt.replace(tzinfo=timezone.utc) if cycle_dt.tzinfo is None
+                 else cycle_dt.astimezone(timezone.utc))
+    age = datetime.now(timezone.utc) - cycle_utc
+    nomads_expired = age > timedelta(days=NOMADS_RETENTION_DAYS)
+    if nomads_expired:
+        log(f"cycle is {age.days} days old, past NOMADS' retention; "
+            "downloading from the S3 archive")
     for h in hours:
         for url, suffix in zip(FILTER_URLS, ["", "b"]):
             name = f"gfs.t{cycle_dt:%H}z.pgrb2{suffix}.0p25.f{h:03d}"
@@ -738,7 +767,13 @@ def download_gfs(cfg, cycle_dt, hours, grib_dir):
                 continue
             query = dict(base_query, file=name)
             full = f"{url}?{urllib.parse.urlencode(query)}"
-            for attempt in range(5):
+            # A cycle past NOMADS' retention answers 403/404 on every try:
+            # five attempts with backoff are 7.5 minutes per file spent
+            # learning nothing, on each of a hindcast's ~18 files. Go
+            # straight to the archive for those, and stop asking NOMADS the
+            # moment it says the file is not there.
+            attempts = 0 if nomads_expired else 5
+            for attempt in range(attempts):
                 try:
                     log(f"download {name} (attempt {attempt + 1})")
                     with urllib.request.urlopen(full, timeout=180) as resp:
@@ -747,10 +782,17 @@ def download_gfs(cfg, cycle_dt, hours, grib_dir):
                         raise IOError(f"suspiciously small response ({len(data)} b)")
                     _atomic_write(target, data)
                     break
+                except urllib.error.HTTPError as e:
+                    log(f"  failed: {e}")
+                    if e.code == 404:
+                        nomads_expired = True
+                        attempts = 0
+                        break
+                    time.sleep(30 * (attempt + 1))
                 except Exception as e:  # noqa: BLE001
                     log(f"  failed: {e}")
                     time.sleep(30 * (attempt + 1))
-            else:
+            if not target.exists() or target.stat().st_size <= 100_000:
                 # NOMADS retains ~10 days; fall back to the NOAA S3 archive
                 # (full-globe files, no subregion filter — larger but complete)
                 s3 = (f"https://noaa-gfs-bdp-pds.s3.amazonaws.com"
@@ -1482,7 +1524,7 @@ def main():
 
     ranks, threads, cpus = parallel_layout(cfg)
     ranks = check_decomposition(workdir, ranks, eff_ndom)
-    threads = cap_threads_for_d01(workdir, threads)
+    threads = cap_threads_for_d01(workdir, threads, ranks)
     mpi, bound = mpi_prefix(ranks, threads, cfg)
     env = wrf_environment(cfg, threads, bound)
     log(f"parallel layout [{WRF_PARALLEL}]: {ranks} MPI rank(s) x {threads} "

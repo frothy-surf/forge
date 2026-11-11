@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import local_telemetry  # noqa: E402  (same bin/ directory in the image)
 import runner  # noqa: E402
 from runner import (  # noqa: E402
-    BASEDIR, VTABLES, check_decomposition, download_gfs, download_hrrr,
+    BASEDIR, VTABLES, cap_threads_for_d01, check_decomposition, download_gfs, download_hrrr,
     download_rrfs, edit_namelists, expect, force_sfcp_to_sfcp, grib_cache_dir,
     link_gribs, log, mpi_prefix, parallel_layout, region_config, run,
     set_metgrid_levels, stage_workdir, summarize_timing, wrf_environment,
@@ -470,6 +470,7 @@ def main():
 
     ranks, threads, cpus = parallel_layout(cfg)
     ranks = check_decomposition(workdir, ranks, ndom)
+    threads = cap_threads_for_d01(workdir, threads, ranks)
     mpi, bound = mpi_prefix(ranks, threads, cfg)
     env = wrf_environment(cfg, threads, bound)
     log(f"parallel layout: {ranks} MPI rank(s) x {threads} OpenMP thread(s) across {cpus} CPU(s)")

@@ -19,6 +19,19 @@ sed -i 's|if(nzol+1 .le. 1000)then|if(nzol .ge. 0 .and. nzol+1 .le. 1000)then|' 
 [ "$(grep -c 'nzol .ge. 0 .and.' phys/module_sf_mynn.F)" = 4 ] || {
   echo "MYNN psi-table guard did not apply (expected 4 sites)"; exit 1; }
 
+# cal_helicity sizes its tile-local work arrays its-3:ite+2 / jts-3:jte+2 but
+# its edge fill writes rvort(ide,..) / rvort(..,jde) whenever the tile's
+# extended range reaches the last interior point — which a tile ending at
+# ide-3 / jde-3 does, one cell short of owning that edge. The write lands one
+# past the array, on the thread's stack, and surfaces as a SIGSEGV or SIGABRT
+# at no fixed model time. It needs an OpenMP tile or MPI patch whose
+# high-side neighbour is exactly 3 cells deep, so it shows only at some
+# thread counts (a 46-row nest: 15, 16 and 18 threads). One more cell on the
+# high side holds the fill value, which nothing reads afterwards.
+sed -i 's/its-3:ite+2\(.*\)jts-3:jte+2/its-3:ite+3\1jts-3:jte+3/' dyn_em/module_diffusion_em.F
+[ "$(grep -c 'its-3:ite+3.*jts-3:jte+3' dyn_em/module_diffusion_em.F)" = 4 ] || {
+  echo "cal_helicity bounds fix did not apply (expected 4 declarations)"; exit 1; }
+
 opt="$(python3 "$here/select_build_option.py" wrf "$TC_WRF_DESC" "$WRF_PARALLEL")"
 echo "==> WRF configure: option $opt ($WRF_TOOLCHAIN, $WRF_PARALLEL)"
 # Second answer is configure's nesting prompt: 1 = basic nesting.
