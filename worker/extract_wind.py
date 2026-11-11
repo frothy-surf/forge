@@ -19,6 +19,7 @@ input file when present, else from --static (a wrfout or geo_em file).
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -279,6 +280,23 @@ def put_station_sample(samples, stamp, sample):
         samples[stamp] = sample
 
 
+def finite_sample(speed_kts, speed2m_kts, dir_deg, dx_m, gust_kts):
+    """One stations.json sample, [speed_kts, speed2m_kts, dir_from_deg, dx_m,
+    gust_kts] rounded for the file — or None when the wind is not finite.
+    A chunk WRF was still writing when it died reads back as fill values
+    (a SIGSEGV seconds after a history write leaves exactly that), and
+    int(round(NaN)) would raise in the middle of the final publish, so the
+    job's error would say "extraction failed" instead of what WRF did. No
+    sample is the honest value for a frame that was never finished."""
+    if not all(math.isfinite(float(v)) for v in (speed_kts, speed2m_kts, dir_deg)):
+        return None
+    gust = None
+    if gust_kts is not None and math.isfinite(float(gust_kts)):
+        gust = round(float(gust_kts), 1)
+    return [round(float(speed_kts), 1), round(float(speed2m_kts), 1),
+            int(round(float(dir_deg))) % 360, dx_m, gust]
+
+
 def write_station_series(spath, stations_out, generated):
     for rec in stations_out.values():
         rec["samples"] = dict(sorted(rec["samples"].items()))
@@ -482,10 +500,10 @@ def main():
                 aspd = float(np.hypot(ue[mask], ve[mask]).mean()) * 1.9438445
                 adir = (np.degrees(np.arctan2(-au, -av)) + 360.0) % 360.0
                 ared = float(reduction[mask].mean())
-                agust = (round(float(gust[mask].mean()) * 1.9438445, 1)
-                         if gust is not None else None)
-                put_station_sample(stations_out[sid]["samples"], stamp, [
-                    round(aspd, 1), round(aspd * ared, 1), int(round(adir)) % 360, dx_m, agust])
+                agust = float(gust[mask].mean()) * 1.9438445 if gust is not None else None
+                sample = finite_sample(aspd, aspd * ared, adir, dx_m, agust)
+                if sample is not None:
+                    put_station_sample(stations_out[sid]["samples"], stamp, sample)
 
             if st_ids:
                 su = grid.bilinear(ue, st_fi, st_fj)
@@ -496,14 +514,11 @@ def main():
                 sdir = (np.degrees(np.arctan2(-su, -sv)) + 360.0) % 360.0
                 dx = int(round(grid.dx))
                 for k, sid in enumerate(st_ids):
-                    put_station_sample(stations_out[sid]["samples"], stamp, [
-                        round(float(sspd[k]), 1),
-                        round(float(sspd[k] * sred[k]), 1),
-                        int(round(float(sdir[k]))) % 360,
-                        dx,
-                        (round(float(sgust[k]) * 1.9438445, 1)
-                         if sgust is not None else None),
-                    ])
+                    sample = finite_sample(
+                        sspd[k], sspd[k] * sred[k], sdir[k], dx,
+                        sgust[k] * 1.9438445 if sgust is not None else None)
+                    if sample is not None:
+                        put_station_sample(stations_out[sid]["samples"], stamp, sample)
 
             for rect in cfg["rects"]:
                 # rect-level grid: a 2 km-domain rect published at the global

@@ -88,11 +88,19 @@ def classify(error_text, workdir=None):
     """
     corpus = error_text or ""
     if workdir:
-        corpus = corpus + "\n" + _rsl_tail(workdir)
+        rsl = _rsl_tail(workdir)
+        corpus = corpus + "\n" + rsl
         steps = _integration_steps(workdir)
+        # The CFL/NaN precursor that demotes a late segfault to a config
+        # problem must be WRF's own word, so it is read from rsl.error alone:
+        # the runner's Python traceback can say "NaN" for reasons of its own
+        # (extracting the chunk WRF was writing when it died raises "cannot
+        # convert float NaN to integer"), and that text would turn an infra
+        # late segfault into a model verdict — which for a hosted run means
+        # a blocked config and a spent crash allowance.
         if steps >= LATE_SEGFAULT_MIN_STEPS and re.search(
                 r"Segmentation fault|SIGSEGV|signal 11|exit status 139", corpus, re.IGNORECASE) \
-                and not re.search(r"cfl|NaN|Floating.?point", corpus, re.IGNORECASE):
+                and not re.search(r"cfl|NaN|Floating.?point", rsl, re.IGNORECASE):
             return {"crash_class": "late_segfault", "class_kind": "infra",
                     "evidence": f"SIGSEGV after {steps} clean integration steps (no CFL/NaN precursor)"}
     for pattern, cls, kind in _RULES:
