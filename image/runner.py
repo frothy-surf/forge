@@ -296,6 +296,11 @@ def _namelist_ints(text, key):
             if t.isdigit()]
 
 
+MALLOC_TUNABLES = ("glibc.malloc.mmap_threshold=33554432:"
+                   "glibc.malloc.trim_threshold=4294967296:"
+                   "glibc.malloc.top_pad=268435456")
+
+
 def wrf_environment(cfg, threads, bound):
     """Runtime environment for real.exe/wrf.exe.
 
@@ -313,6 +318,11 @@ def wrf_environment(cfg, threads, bound):
     if bound:
         defaults["OMP_PROC_BIND"] = "close"
         defaults["OMP_PLACES"] = "cores"
+    # WRF allocates and frees large work arrays every time step. glibc's
+    # defaults hand that memory back to the kernel each time (mmap above 128 kB,
+    # trimming the heap top), so every step pays for page faults and zeroing
+    # again. Keeping it in the heap costs some resident memory and no accuracy.
+    env.setdefault("GLIBC_TUNABLES", MALLOC_TUNABLES)
     for key, cfg_key in (("OMP_WAIT_POLICY", "omp_wait_policy"),
                          ("OMP_PROC_BIND", "omp_proc_bind"),
                          ("OMP_PLACES", "omp_places")):
