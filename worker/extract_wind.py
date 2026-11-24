@@ -609,6 +609,11 @@ def main():
         # slice by the hosted worker) — lets readers tell a windowed nest from a
         # rect that simply hasn't published yet
         manifest["nests"] = cfg["nest_windows"]
+    if cfg.get("sst"):
+        # which sea-surface temperatures the run started from (runner.py's
+        # run_meta "sst"): a GeoPolar fallback changes the forecast near
+        # water, and the viewer says so
+        manifest["sst"] = cfg["sst"]
     manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     mpath.write_text(json.dumps(manifest, indent=1))
     if stations:

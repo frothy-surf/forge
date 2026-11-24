@@ -1512,7 +1512,12 @@ def main():
     # ERA5 defaults OFF: its own SST/skin analysis is already good, and its
     # hindcasts predate the GeoPolar archive's practical reach; an explicit
     # {"geopolar_sst": true} override still turns it on for A/Bs.
-    if (overrides or {}).get("geopolar_sst", source != "era5"):
+    # Which SST the run actually started from rides run_meta.json as "sst":
+    # the worker puts it on the job record and in the published manifest, so
+    # a fallback is visible to the bench and to the viewer, not just this log.
+    sst = {"requested": bool((overrides or {}).get("geopolar_sst", source != "era5")),
+           "source": source, "fell_back": False}
+    if sst["requested"]:
         try:
             import geopolar_sst
         except ImportError as e:
@@ -1521,10 +1526,22 @@ def main():
             # A/B attribution. Shout.
             log(f"GEOSST module not present in this image ({e}); "
                 "running with boundary-source SST")
+            sst.update(fell_back=True, reason=f"module not present: {e}")
         else:
-            geopolar_sst.stage(workdir, cycle_dt, log)
+            record = {}
+            if geopolar_sst.stage(workdir, cycle_dt, log, record):
+                sst.update(source="geopolar", analysis_date=record.get("analysis_date"))
+            else:
+                sst.update(fell_back=True, reason=record.get("reason"))
     else:
         log("GEOSST disabled by config override; SST from boundary source")
+    if sst["fell_back"]:
+        log(f"SST FALLBACK: GeoPolar was asked for and this run starts from "
+            f"{source.upper()} SST ({sst.get('reason')})")
+    meta_path = workdir / "run_meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["sst"] = sst
+    meta_path.write_text(json.dumps(meta, indent=1))
 
     # HRRR-anchored soil init: RUC 9-level cycled land DA as the init soil,
     # GFS keeping the atmosphere ("borrowed DA" — see image/hrrr_soil.py).
