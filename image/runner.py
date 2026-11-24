@@ -1051,6 +1051,17 @@ def download_era5(cfg, cycle_dt, hours, grib_dir):
             forcing_r2_put(cfg, "era5", day_dt, target.name, target)
 
 
+def copy_writable(src, dst):
+    """Copy src's contents to a fresh, writable dst. shutil.copy carries the
+    source's mode, and out of a nix store (the native runtime) that is
+    read-only: the run's own edits (namelist dates, the GEOSST table patch)
+    then fail, and so does the next copy over a work directory that is being
+    reused. Replace the file instead of writing through it."""
+    if dst.is_symlink() or dst.exists():
+        dst.unlink()
+    shutil.copyfile(src, dst)
+
+
 def stage_workdir(region, workdir, config_dir=None, boundary_source="gfs"):
     """Link executables, tables and region files into the run directory.
     Service-provided templates (config_dir, staged by the caller)
@@ -1062,10 +1073,10 @@ def stage_workdir(region, workdir, config_dir=None, boundary_source="gfs"):
     for f in ("namelist.wps", "namelist.input", "GEOGRID.TBL", "wind_io.txt"):
         for src in [Path(config_dir) / f if config_dir else None, rdir / f if rdir else None]:
             if src and src.exists():
-                shutil.copy(src, workdir / f)
+                copy_writable(src, workdir / f)
                 break
-    shutil.copy(BASEDIR / "tables" / "METGRID.TBL", workdir / "METGRID.TBL")
-    shutil.copy(BASEDIR / "tables" / VTABLES[boundary_source], workdir / "Vtable")
+    copy_writable(BASEDIR / "tables" / "METGRID.TBL", workdir / "METGRID.TBL")
+    copy_writable(BASEDIR / "tables" / VTABLES[boundary_source], workdir / "Vtable")
     # WRF runtime tables/data files (LANDUSE.TBL, RRTMG_*, ozone, etc.)
     for src in (BASEDIR / "wrf_run").iterdir():
         dst = workdir / src.name

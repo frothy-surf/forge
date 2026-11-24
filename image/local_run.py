@@ -18,8 +18,9 @@ Products (wind JSON/PNG per product.json rect) land in /out/wind alongside
 the raw wrfwind/wrfout NetCDF.
 
 Differences from the hosted runner (runner.py main): the window starts at
-the forcing cycle (no local-day logic), no checkpoints/restarts, no nest
-windows, no GeoPolar SST enrichment, and geog_data_res defaults to the
+the forcing cycle (no local-day logic; --offset moves it), no
+checkpoints/restarts, no nest windows, no GeoPolar SST enrichment unless
+--geopolar-sst asks for it, and geog_data_res defaults to the
 standard WPS datasets — the tuned frothy extras (SRTM 30 m topo,
 WorldCover landuse) are dataset installs, not code, so a stock WPS_GEOG
 download just works.
@@ -328,6 +329,10 @@ def main():
                     help="geog_data_res stamped into namelist.wps for geogrid; "
                          "'keep' preserves the bundle's values (needs the matching datasets "
                          "under /geog and the bundle's own GEOGRID.TBL)")
+    ap.add_argument("--geopolar-sst", action="store_true",
+                    help="stage GeoPolar Blended SST before metgrid, as the hosted runner does by "
+                         "default (runner.py main); fail-open: a fetch problem logs and the run "
+                         "proceeds on the boundary source's SST")
     ap.add_argument("--stop-after", choices=["geogrid", "ungrib", "metgrid", "real"],
                     help="run the pipeline only through this stage (debugging)")
     ap.add_argument("--no-serve", action="store_true",
@@ -481,6 +486,15 @@ def main():
         log("stopped after ungrib")
         return
     stage("avg_tsfc", ["avg_tsfc.exe"], workdir, logdir / "avg_tsfc.out")
+    if args.geopolar_sst:
+        try:
+            import geopolar_sst
+        except ImportError as e:
+            # asked for and missing: a silent miss would poison an SST A/B
+            log(f"GEOSST asked for but the module is not present ({e}); "
+                "running with boundary-source SST")
+        else:
+            geopolar_sst.stage(workdir, cycle_dt, log)
     stage("metgrid", ["metgrid.exe"], workdir, logdir / "metgrid.out",
           "Successful completion", extra_logs=("metgrid.log*",))
     if args.stop_after == "metgrid":
